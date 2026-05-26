@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Opening latest report...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.5;
+    }
+
+    pre {
+      background: #f5f5f5;
+      padding: 1rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Opening latest report...</h1>
+  <p id="message">Checking the latest report link.</p>
+  <pre id="debug"></pre>
+
+  <script>
+    /*
+      Replace this with your real ArcGIS REST query endpoint.
+      It must end with /FeatureServer/0/query
+      Do NOT use the ArcGIS Online item page URL.
+    */
+    const FEATURE_LAYER_QUERY_URL =
+      
+      "https://services1.arcgis.com/xeMpV7tU1t4KD3Ei/arcgis/rest/services/survey123_22cde72c933248428bd7bd724ff6851d_results/FeatureServer/0/query?where=report_url+IS+NOT+NULL&objectIds=&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&resultType=none&distance=0.0&units=esriSRUnit_Meter&outDistance=&relationParam=&returnGeodetic=false&outFields=&returnHiddenFields=false&returnGeometry=false&featureEncoding=esriDefault&multipatchOption=xyFootprint&maxAllowableOffset=&geometryPrecision=&outSR=&defaultSR=&datumTransformation=&applyVCSProjection=false&returnIdsOnly=false&returnUniqueIdsOnly=false&returnCountOnly=false&returnExtentOnly=false&returnQueryGeometry=false&returnDistinctValues=false&cacheHint=false&collation=&orderByFields=CreationDate+DESC&groupByFieldsForStatistics=&returnAggIds=false&outStatistics=&having=&resultOffset=&resultRecordCount=1&returnZ=false&returnM=false&returnTrueCurves=false&returnExceededLimitFeatures=true&quantizationParameters=&sqlFormat=none&f=pjson&token=alvNuTP5_w0dpNZYebNFx_g..R2iqmKn78XX6W4ia87tPGG0LX_KEmh74DaQ1AsGtB3WhlOiw7B_6GDI5_4gFKWqaiDFy3RjvH6ongtdoXOn7Mlx7BNizRSPVrakQRoQp1qj2aDngifrMblbfMLnCNlPuYBFleZCrTzsR2wXPWBCqzvAx2nafCPEurLW7haTDfgNDmcjxQBhTbPeuJN7HDlxPBiTQTiocoljraaos5uqRUPnBPiT_rD06O_8O62-hFyJC-ufsbfVX";
+
+    /*
+      Your actual field names.
+      Make sure the capitalization matches the JSON result exactly.
+    */
+    const LINK_FIELD = "report_url";
+    const DATE_FIELD = "CreationDate";
+
+    const messageEl = document.getElementById("message");
+    const debugEl = document.getElementById("debug");
+
+    /*
+      Add ?debug=1 to your GitHub Pages URL to test without redirecting.
+
+      Example:
+      https://your-username.github.io/latest-link-redirect-test/?debug=1
+    */
+    const urlParams = new URLSearchParams(window.location.search);
+    const debugMode = urlParams.get("debug") === "1";
+
+    async function openLatestReport() {
+      const params = new URLSearchParams({
+        where: `${LINK_FIELD} IS NOT NULL`,
+        outFields: `${LINK_FIELD},${DATE_FIELD}`,
+        returnGeometry: "false",
+        orderByFields: `${DATE_FIELD} DESC`,
+        resultRecordCount: "1",
+        f: "json",
+
+        // Helps prevent cached results while testing.
+        cacheBust: Date.now().toString()
+      });
+
+      const arcgisQueryUrl = `${FEATURE_LAYER_QUERY_URL}?${params.toString()}`;
+
+      const response = await fetch(arcgisQueryUrl, {
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        throw new Error(`ArcGIS query failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      const attributes = data.features?.[0]?.attributes;
+
+      if (!attributes) {
+        messageEl.textContent = "No report record was found.";
+        debugEl.textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      const latestUrl = attributes[LINK_FIELD];
+
+      if (!latestUrl) {
+        messageEl.textContent = `The latest record does not have a value in ${LINK_FIELD}.`;
+        debugEl.textContent = JSON.stringify(attributes, null, 2);
+        return;
+      }
+
+      let redirectUrl;
+
+      try {
+        redirectUrl = new URL(latestUrl);
+      } catch {
+        messageEl.textContent = "The report_url value is not a valid URL.";
+        debugEl.textContent = latestUrl;
+        return;
+      }
+
+      if (redirectUrl.protocol !== "http:" && redirectUrl.protocol !== "https:") {
+        messageEl.textContent = "The report_url value must start with http:// or https://.";
+        debugEl.textContent = latestUrl;
+        return;
+      }
+
+      if (debugMode) {
+        messageEl.textContent = "Debug mode: latest report link found, but redirect is paused.";
+        debugEl.textContent = JSON.stringify({
+          latestUrl: redirectUrl.toString(),
+          latestRecordAttributes: attributes,
+          arcgisQueryUrl: arcgisQueryUrl
+        }, null, 2);
+        return;
+      }
+
+      messageEl.textContent = "Redirecting to the latest report...";
+      window.location.replace(redirectUrl.toString());
+    }
+
+    openLatestReport().catch(error => {
+      console.error(error);
+      messageEl.textContent = "Could not open the latest report.";
+      debugEl.textContent = error.message;
+    });
+  </script>
+</body>
+</html>
