@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Opening latest report...</title>
+  <title>Redirecting...</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
@@ -10,6 +10,7 @@
       font-family: Arial, sans-serif;
       margin: 2rem;
       line-height: 1.5;
+      display: none;
     }
 
     pre {
@@ -22,50 +23,40 @@
 </head>
 
 <body>
-  <h1>Opening latest report...</h1>
-  <p id="message">Checking the latest report link.</p>
+  <h1 id="title">Unable to open latest report</h1>
+  <p id="message"></p>
   <pre id="debug"></pre>
 
   <script>
-    /*
-      Replace this with your real ArcGIS REST query endpoint.
-      It must end with /FeatureServer/0/query
-      Do NOT use the ArcGIS Online item page URL.
-    */
     const FEATURE_LAYER_QUERY_URL =
-      
       "https://services1.arcgis.com/xeMpV7tU1t4KD3Ei/arcgis/rest/services/survey123_22cde72c933248428bd7bd724ff6851d_results/FeatureServer/0/query";
 
-    /*
-      Your actual field names.
-      Make sure the capitalization matches the JSON result exactly.
-    */
     const LINK_FIELD = "report_url";
     const DATE_FIELD = "CreationDate";
 
+    const titleEl = document.getElementById("title");
     const messageEl = document.getElementById("message");
     const debugEl = document.getElementById("debug");
 
-    /*
-      Add ?debug=1 to your GitHub Pages URL to test without redirecting.
-
-      Example:
-      https://your-username.github.io/latest-link-redirect-test/?debug=1
-    */
     const urlParams = new URLSearchParams(window.location.search);
     const debugMode = urlParams.get("debug") === "1";
+
+    function showPage(title, message, debugInfo = "") {
+      document.body.style.display = "block";
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      debugEl.textContent = debugInfo;
+    }
 
     async function openLatestReport() {
       const params = new URLSearchParams({
         where: `${LINK_FIELD} IS NOT NULL`,
-        outFields: `${LINK_FIELD},${DATE_FIELD}`,
+        outFields: `${LINK_FIELD},${DATE_FIELD},objectid`,
         returnGeometry: "false",
         orderByFields: `${DATE_FIELD} DESC`,
         resultRecordCount: "1",
         f: "json",
-
-        // Helps prevent cached results while testing.
-        cacheBust: Date.now().toString()
+        _: Date.now().toString()
       });
 
       const arcgisQueryUrl = `${FEATURE_LAYER_QUERY_URL}?${params.toString()}`;
@@ -74,25 +65,51 @@
         cache: "no-store"
       });
 
-      if (!response.ok) {
-        throw new Error(`ArcGIS query failed with status ${response.status}`);
+      const text = await response.text();
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        showPage(
+          "Unable to open latest report",
+          "ArcGIS returned an unexpected response.",
+          text
+        );
+        return;
       }
 
-      const data = await response.json();
+      if (!response.ok || data.error) {
+        showPage(
+          "Unable to open latest report",
+          "The ArcGIS query failed.",
+          JSON.stringify({
+            requestUrl: arcgisQueryUrl,
+            response: data
+          }, null, 2)
+        );
+        return;
+      }
 
       const attributes = data.features?.[0]?.attributes;
 
       if (!attributes) {
-        messageEl.textContent = "No report record was found.";
-        debugEl.textContent = JSON.stringify(data, null, 2);
+        showPage(
+          "No report found",
+          "No report record was found in the feature layer.",
+          JSON.stringify(data, null, 2)
+        );
         return;
       }
 
       const latestUrl = attributes[LINK_FIELD];
 
       if (!latestUrl) {
-        messageEl.textContent = `The latest record does not have a value in ${LINK_FIELD}.`;
-        debugEl.textContent = JSON.stringify(attributes, null, 2);
+        showPage(
+          "No report URL found",
+          `The latest record does not have a value in ${LINK_FIELD}.`,
+          JSON.stringify(attributes, null, 2)
+        );
         return;
       }
 
@@ -101,35 +118,46 @@
       try {
         redirectUrl = new URL(latestUrl);
       } catch {
-        messageEl.textContent = "The report_url value is not a valid URL.";
-        debugEl.textContent = latestUrl;
+        showPage(
+          "Invalid report URL",
+          "The report_url value is not a valid URL.",
+          latestUrl
+        );
         return;
       }
 
       if (redirectUrl.protocol !== "http:" && redirectUrl.protocol !== "https:") {
-        messageEl.textContent = "The report_url value must start with http:// or https://.";
-        debugEl.textContent = latestUrl;
+        showPage(
+          "Invalid report URL",
+          "The report_url value must start with http:// or https://.",
+          latestUrl
+        );
         return;
       }
 
       if (debugMode) {
-        messageEl.textContent = "Debug mode: latest report link found, but redirect is paused.";
-        debugEl.textContent = JSON.stringify({
-          latestUrl: redirectUrl.toString(),
-          latestRecordAttributes: attributes,
-          arcgisQueryUrl: arcgisQueryUrl
-        }, null, 2);
+        showPage(
+          "Debug mode",
+          "Latest report link found, but redirect is paused.",
+          JSON.stringify({
+            latestUrl: redirectUrl.toString(),
+            latestRecordAttributes: attributes,
+            arcgisQueryUrl: arcgisQueryUrl
+          }, null, 2)
+        );
         return;
       }
 
-      messageEl.textContent = "Redirecting to the latest report...";
       window.location.replace(redirectUrl.toString());
     }
 
     openLatestReport().catch(error => {
       console.error(error);
-      messageEl.textContent = "Could not open the latest report.";
-      debugEl.textContent = error.message;
+      showPage(
+        "Unable to open latest report",
+        "Something went wrong while trying to open the latest report.",
+        error.message
+      );
     });
   </script>
 </body>
